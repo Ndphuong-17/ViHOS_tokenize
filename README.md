@@ -10,8 +10,8 @@ To run this project, you can use Google Colab or Kaggle, which provide free acce
 
 1. Clone the repository by running the following command in a code cell:
    ```python
-   !git clone https://github.com/your_username/your_repository_name.git
-   %cd your_repository_name
+   !git clone https://github.com/Ndphuong-17/ViHOS_tokenize.git
+   %cd ViHOS_tokenize
    ```
 
 2. Install the required libraries (if needed) using:
@@ -26,7 +26,7 @@ To run this project, you can use Google Colab or Kaggle, which provide free acce
 To run the training and testing process, use the following command:
 
 ```bash
-python Code/main.py --train_path "Data/BIO_data/train_BIO.csv" --dev_path "Data/BIO_data/dev_BIO.csv" --test_path "Data/BIO_data/test_BIO.csv" --test_index 50 --batch_size 64 --max_len 64 --lr 5e-6 --num_epochs 2 --output_json "test_results.json" --output_dir "output"
+!python main.py --train_path "Data/BIO_data/train_BIO.csv" --dev_path "Data/BIO_data/dev_BIO.csv" --test_path "Data/BIO_data/test_BIO.csv" --test_index 50 --batch_size 64 --max_len 64 --lr 5e-6 --num_epochs 2 --output_json "test_results.json" --output_dir "output"
 ```
 
 ### Command Line Arguments
