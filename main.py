@@ -29,7 +29,9 @@ def main(args):
         )
     elif args.test_index is not None:
         print("Test index out of range. Please provide a valid integer index greater than 3.")
-        return
+        train_path, dev_path, test_path = args.train_path, args.dev_path, args.test_path
+    else:
+        train_path, dev_path, test_path = args.train_path, args.dev_path, args.test_path
 
     # Create data loaders
     train_dataloader = create_dataloader(
