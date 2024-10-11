@@ -1,5 +1,3 @@
-
-```markdown
 # Detecting Hate Speech Model for ViHOS Dataset
 
 This repository contains code for training and evaluating a custom machine learning model for detecting hate speech on a word level, based on the `transformers` library and designed to work with the ViHOS-formatted dataset.
@@ -44,23 +42,3 @@ python Code/main.py --train_path "Data/BIO_data/train_BIO.csv" --dev_path "Data/
 - `--output_json`: File name for saving the test results in JSON format.
 - `--output_dir`: Directory to save the output model and results.
 
-## Training
-
-To train the model, use the command in the [Usage](#usage) section. This script will train the model using the specified training data and parameters, and save the trained model to the `output_dir` specified.
-
-## Testing
-
-After training, the model is evaluated on the test dataset. The test results, including metrics and predictions, are saved in the specified JSON file (`output_json`).
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-```
-
-### Customization Tips
-1. **GitHub Repository**: Replace `https://github.com/your_username/your_repository_name.git` with the actual URL of your GitHub repository.
-2. **Dependencies**: If you use additional libraries not available on Colab or Kaggle by default, list them in the Colab or Kaggle install commands.
-3. **Data Upload**: For Colab, provide instructions on how users can upload their datasets using the Colab file manager if needed.
-4. **Results**: If you want to include an example of the JSON output, you can add a section showing sample test results.
-
-Feel free to adapt this to better fit your needs!
