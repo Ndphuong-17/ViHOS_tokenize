@@ -1,0 +1,8 @@
+Unnamed: 0,index,Word,Tag,sentence_id
+489,526,90tr,O,37
+490,527,dân,O,37
+491,528,Việt_Nam,O,37
+492,529,đang,O,37
+493,530,vả,B-T,37
+494,531,nhung,O,37
+495,532,nè,O,37
