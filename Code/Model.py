@@ -103,7 +103,10 @@ def train(model, train_dataloader, dev_dataloader, criterion, optimizer, device,
 
             # Forward pass
             logits = model(input_ids, attention_mask)
-            loss = criterion(logits.squeeze(), labels)
+            try: 
+                loss = criterion(logits.squeeze(), labels)
+            except:
+                loss = criterion(logits.squeeze(dim = 0), labels)
 
             # Backward pass and optimization step
             loss.backward()
@@ -124,7 +127,10 @@ def train(model, train_dataloader, dev_dataloader, criterion, optimizer, device,
 
                 # Forward pass for validation
                 logits = model(input_ids, attention_mask)
-                loss = criterion(logits.squeeze(), labels)
+                try: 
+                    loss = criterion(logits.squeeze(), labels)
+                except:
+                    loss = criterion(logits.squeeze(dim = 0), labels)
                 val_loss += loss.item()
 
                 # Collect predictions and targets for F1 score calculation
