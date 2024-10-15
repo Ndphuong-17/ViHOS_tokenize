@@ -1,6 +1,7 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import torch 
+import ast
 
 
 def split_path(path, test_index, train_path, dev_path, test_path):
@@ -42,50 +43,64 @@ def split_path(path, test_index, train_path, dev_path, test_path):
 def prepare_data(file_path):
     df = pd.read_csv(file_path)
 
-    # remove nan
+    # Remove NaN values
     df = df.dropna()
     df = df.reset_index(drop=True)
     print(f"Columns: {df.columns}")
 
-    texts = df['Word'].tolist()
-    spans = df['Tag'].tolist()
+    try:
+        texts = df['Text'].tolist()
+    except KeyError:
+        print("Text column not found.")
+        return [], []
 
-    # convert spans to binary representation (binary_spans is intended to represent the tags in a simpler binary format.)
+    # Parse the 'Tag' column as lists of floats
     binary_spans = []
-    for span in spans:
-        binary_span = []
-        span = span.split(' ')
-        for s in span:
-            if s == 'O':
-                binary_span.append(0)
-            else:
-                binary_span.append(1)
-        binary_spans.append(binary_span)
+    for tag in df['Tag'].tolist():
+        # Replace spaces with commas to create a valid list representation
+        try:
+            tag = tag.replace(' ', ',')
+            tag = tag.replace('[', '[ ').replace(']', ' ]')  # Add space after '[' and before ']' for better readability
+            parsed_tag = ast.literal_eval(tag)  # Safely evaluate the string to a list of floats
+            binary_spans.append([float(i) for i in parsed_tag])  # Convert to float
+        except:
+            binary_spans.append(tag)  # Append an empty list in case of error
 
     return texts, binary_spans
 
-# Dataloader function
 class TextDataset(torch.utils.data.Dataset):
-    def __init__(self, texts, spans, tokenizer, max_len):
-        self.texts = [tokenizer(text,
-                                padding='max_length',
-                                max_length = 64, truncation=True,
-                                return_tensors="pt")for text in texts]
-        self.spans = []
-
-        for span in spans:
-            if len(span) < max_len:
-                self.spans.append(span + [0] * (max_len - len(span)))
-            else:
-                self.spans.append(span[:max_len])
-
-        self.spans = torch.tensor(self.spans)
+    def __init__(self, texts, labels, tokenizer, max_length=128):
+        self.texts = texts
+        self.labels = labels
+        self.tokenizer = tokenizer
+        self.max_length = max_length
 
     def __len__(self):
-        return len(self.spans)
+        return len(self.texts)
 
-    def __getitem__(self, index):
-        return self.texts[index], self.spans[index]
+    def __getitem__(self, idx):
+        text = self.texts[idx]
+        label = self.labels[idx]
+        
+        # Convert the list to a tensor of type float (for multilabel)
+        label = torch.tensor(label, dtype=torch.float)
+
+        # Tokenize the input text
+        encoded = self.tokenizer(
+            text,
+            truncation=True,
+            padding='max_length',
+            max_length=self.max_length,
+            return_tensors='pt'
+        )
+        input_ids = encoded['input_ids'].squeeze(0)
+        attention_mask = encoded['attention_mask'].squeeze(0)
+
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'label': label  # Return the tensor directly
+        }
 
 def create_dataloader(data_path, batch_size, tokenizer, max_len, shuffle=True):
     dataset = TextDataset(*prepare_data(data_path), tokenizer, max_len)

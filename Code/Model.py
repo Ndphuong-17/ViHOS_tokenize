@@ -6,30 +6,74 @@ import numpy as np
 import torch.optim as optim
 
 
-
 class MultiTaskModel(nn.Module):
-    """
-    A custom machine learning model for detecting hate speech on a word level, based on the transformers library
-    """
-    def __init__(self, input_model):
+    def __init__(self, embedding_model, classification_model, dropout_rate=0.1):
         super(MultiTaskModel, self).__init__()
-        self.bert = input_model
-        self.span_classifier = nn.Linear(768, 1)
-        self.dropout = nn.Dropout(0.1)
+        self.embedding_model = embedding_model
+        self.classification_head = nn.Linear(768, 1)
+        self.dropout = nn.Dropout(dropout_rate)  # Initialize dropout layer
 
     def forward(self, input_ids, attention_mask):
-        output = self.bert(input_ids=input_ids, attention_mask=attention_mask, return_dict=False)
-        last_hidden_state = output[0]
-        last_hidden_state = self.dropout(last_hidden_state)
-        span_logits = self.span_classifier(last_hidden_state)
+        """
+        input_ids: Tensor of shape (batch_size, max_length)
+        attention_mask: Tensor of shape (batch_size, max_length)
+        """
+        # Get token-level embeddings from the embedding model
+        outputs = self.embedding_model(input_ids=input_ids, attention_mask=attention_mask)
+        last_hidden_state = outputs.last_hidden_state  # (batch_size, max_length, hidden_dim)
 
-        span_logits = span_logits.permute(0, 2, 1)
-        span_logits = torch.sigmoid(span_logits)
-        span_logits = span_logits.permute(0, 2, 1)
+        # Apply mean pooling over the last hidden state
+        pooled_output = last_hidden_state.mean(dim=1)  # Shape: (batch_size, hidden_dim)
 
-        return  span_logits
+        # Apply dropout for regularization
+        pooled_output = self.dropout(pooled_output)
+
+        # Pass the pooled embeddings through the classification head
+        # Assuming that `classification_head` requires input_ids and attention_mask
+        logits = self.classification_head(pooled_output)
+        
+        logits = torch.sigmoid(logits)
+
+        return logits
+
+
+
+
+
+def setup_model(model_class, embedding_model, classification_model, lr=5e-6, weight_decay=1e-5, num_epochs=2):
+    """
+    Sets up the multi-task model, criterion, optimizer, and device for training and testing.
     
-def train(model, train_dataloader, dev_dataloader, criterion_span, optimizer_spans, device, num_epochs):
+    Args:
+        embedding_model: The base embedding model.
+        classification_model_class: The class of the multi-task classification model.
+        lr (float): Learning rate for the optimizer. Default is 5e-6.
+        weight_decay (float): Weight decay for the optimizer. Default is 1e-5.
+        num_epochs (int): Number of epochs for training. Default is 2.
+
+    Returns:
+        model (torch.nn.Module): The instantiated multi-task model.
+        criterion (nn.Module): The loss function for the model.
+        optimizer (torch.optim.Optimizer): The optimizer for the model.
+        device (torch.device): The device to be used (CPU or GPU).
+        num_epochs (int): The number of training epochs.
+    """
+    # Set device to GPU if available, otherwise CPU
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Create an instance of the multi-task model and move it to the device
+    model = model_class(embedding_model, classification_model).to(device)
+    
+    # Define the loss function
+    criterion = nn.BCELoss()
+    
+    # Define the optimizer
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    
+    # Return the setup components
+    return model, criterion, optimizer, device, num_epochs
+
+def train(model, train_dataloader, dev_dataloader, criterion, optimizer, device, num_epochs):
     """
     Train the model with specified parameters.
 
@@ -37,8 +81,8 @@ def train(model, train_dataloader, dev_dataloader, criterion_span, optimizer_spa
         model (torch.nn.Module): The model to be trained.
         train_dataloader (DataLoader): Dataloader for training data.
         dev_dataloader (DataLoader): Dataloader for validation data.
-        criterion_span (torch.nn.Module): Loss function for span predictions.
-        optimizer_spans (torch.optim.Optimizer): Optimizer for model parameters.
+        criterion (torch.nn.Module): Loss function for binary classification.
+        optimizer (torch.optim.Optimizer): Optimizer for model parameters.
         device (torch.device): Device to perform training on.
         num_epochs (int): Number of training epochs.
     """
@@ -50,59 +94,59 @@ def train(model, train_dataloader, dev_dataloader, criterion_span, optimizer_spa
         print(f'Epoch: {epoch + 1}')
 
         # Training loop
-        for texts, spans in tqdm(train_dataloader, desc='Training', leave=False):
-            input_ids = texts['input_ids'].squeeze(1).to(device)
-            attention_mask = texts['attention_mask'].to(device)
-            spans = spans.to(device, dtype=torch.float)
+        for data in tqdm(train_dataloader, desc='Training', leave=False):
+            input_ids = data['input_ids'].squeeze(1).to(device)
+            attention_mask = data['attention_mask'].to(device)
+            labels = data['label'].to(device, dtype=torch.float)
 
-            optimizer_spans.zero_grad()
+            optimizer.zero_grad()
 
             # Forward pass
-            span_logits = model(input_ids, attention_mask)
-            loss = criterion_span(span_logits.squeeze(), spans)
+            logits = model(input_ids, attention_mask)
+            loss = criterion(logits.squeeze(), labels)
 
             # Backward pass and optimization step
             loss.backward()
-            optimizer_spans.step()
+            optimizer.step()
 
             total_loss += loss.item()
 
         # Validation loop
         model.eval()  # Set model to evaluation mode for validation
         val_loss = 0
-        span_preds, span_targets = [], []
+        preds, targets = [], []
 
         with torch.no_grad():
-            for texts, spans in tqdm(dev_dataloader, desc='Validation', leave=False):
-                input_ids = texts['input_ids'].squeeze(1).to(device)
-                attention_mask = texts['attention_mask'].to(device)
-                spans = spans.to(device, dtype=torch.float)
+            for data in tqdm(dev_dataloader, desc='Validation', leave=False):
+                input_ids = data['input_ids'].squeeze(1).to(device)
+                attention_mask = data['attention_mask'].to(device)
+                labels = data['label'].to(device, dtype=torch.float)
 
                 # Forward pass for validation
-                span_logits = model(input_ids, attention_mask)
-                loss = criterion_span(span_logits.squeeze(), spans)
+                logits = model(input_ids, attention_mask)
+                loss = criterion(logits.squeeze(), labels)
                 val_loss += loss.item()
 
                 # Collect predictions and targets for F1 score calculation
-                span_preds.append(span_logits.squeeze().cpu())
-                span_targets.append(spans.cpu())
+                preds.append(logits.squeeze().cpu())
+                targets.append(labels.cpu())
 
         # Concatenate predictions and targets
-        span_preds = torch.cat(span_preds).numpy().flatten()
-        span_targets = torch.cat(span_targets).numpy().flatten()
+        preds = torch.cat(preds).numpy().flatten()
+        targets = torch.cat(targets).numpy().flatten()
 
         # Convert logits to binary predictions using thresholding
-        span_preds = (span_preds > 0.5).astype(int)
+        preds = (preds > 0.5).astype(int)
 
         # Calculate macro F1-score
-        span_f1 = f1_score(span_targets, span_preds, average='macro')
+        f1 = f1_score(targets, preds, average='macro')
 
         # Display training and validation losses and metrics
         avg_train_loss = total_loss / len(train_dataloader)
         avg_val_loss = val_loss / len(dev_dataloader)
         print(f'Training Loss: {avg_train_loss:.4f}')
         print(f'Validation Loss: {avg_val_loss:.4f}')
-        print(f'Span Macro F1-Score: {span_f1:.4f}')
+        print(f'Macro F1-Score: {f1:.4f}')
 
 
 def test(model, test_dataloader, device):
@@ -115,70 +159,35 @@ def test(model, test_dataloader, device):
         device (torch.device): The device to perform computations on.
 
     Returns:
-        span_preds (np.ndarray): The predicted spans.
-        span_targets (np.ndarray): The actual target spans.
+        preds (np.ndarray): The predicted labels.
+        targets (np.ndarray): The actual target labels.
     """
     model.eval()
-    span_preds, span_targets = [], []
+    preds, targets = [], []
 
     # Iterate through the test dataloader
     with torch.no_grad():
-        for texts, spans in tqdm(test_dataloader, desc='Testing'):
-            input_ids = texts['input_ids'].squeeze(1).to(device)
-            attention_mask = texts['attention_mask'].to(device)
-            spans = spans.to(device, dtype=torch.float)
+        for data in tqdm(test_dataloader, desc='Testing'):
+            input_ids = data['input_ids'].squeeze(1).to(device)
+            attention_mask = data['attention_mask'].to(device)
+            labels = data['label'].to(device, dtype=torch.float)
 
             # Forward pass
-            span_logits = model(input_ids, attention_mask)
+            logits = model(input_ids, attention_mask)
 
             # Store predictions and targets
-            span_preds.append(span_logits.squeeze().cpu())
-            span_targets.append(spans.cpu())
+            preds.append(logits.squeeze().cpu())
+            targets.append(labels.cpu())
 
     # Concatenate the predictions and targets
-    span_preds = torch.cat(span_preds).numpy().flatten()
-    span_targets = torch.cat(span_targets).numpy().flatten()
+    preds = torch.cat(preds).numpy().flatten()
+    targets = torch.cat(targets).numpy().flatten()
 
     # Apply thresholding to convert logits into binary predictions
-    span_preds = (span_preds > 0.5).astype(int)
+    preds = (preds > 0.5).astype(int)
 
     # Calculate macro F1 score
-    span_f1 = f1_score(span_targets, span_preds, average='macro')
-    print(f"Span F1 Score: {span_f1:.4f}")
+    f1 = f1_score(targets, preds, average='macro')
+    print(f"Macro F1 Score: {f1:.4f}")
 
-    return span_preds, span_targets
-
-
-def setup_model(input_model, model_class, lr=5e-6, weight_decay=1e-5, num_epochs=2):
-    """
-    Sets up the model, criterion, optimizer, and device for training and testing.
-    
-    Args:
-        input_model: The base input model.
-        model_class: The class of the multi-task model.
-        lr (float): Learning rate for the optimizer. Default is 5e-6.
-        weight_decay (float): Weight decay for the optimizer. Default is 1e-5.
-        num_epochs (int): Number of epochs for training. Default is 2.
-
-    Returns:
-        model (torch.nn.Module): The instantiated model.
-        criterion_span (nn.Module): The loss function for spans.
-        optimizer_spans (torch.optim.Optimizer): The optimizer for the model.
-        device (torch.device): The device to be used (CPU or GPU).
-        num_epochs (int): The number of training epochs.
-    """
-    # Set device to GPU if available, otherwise CPU
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Create an instance of the model and move it to the device
-    model = model_class(input_model=input_model).to(device)
-    
-    # Define the loss function
-    criterion_span = nn.BCELoss()
-    
-    # Define the optimizer
-    optimizer_spans = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    
-    # Return the setup components
-    return model, criterion_span, optimizer_spans, device, num_epochs
-
+    return preds, targets
